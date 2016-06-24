@@ -111,6 +111,27 @@ setTimeout(function() {
 }, 5000)
 ```
 
+## Use with Rancher
+
+When running in a Rancher environment, you can optionally omit all Tokens
+when starting the container, this will then look for host labels using the
+Rancher Metadata Service.  Host labels must be one of:
+
+* `logentries-token`         Base token
+* `logentries-token-logs`    Token specifically for log output
+* `logentries-token-stats`   Token specifically for Docker Stats output
+* `logentries-token-events`  Token specifically for Docker Events output
+
+This is useful when you want to deploy logentries as a global service inside
+a Rancher environment but the environment contains hosts that should ship
+to different logs/log sets. This enables you to have a single logentries
+stack, globally scaled, and then each container retrieves its token information
+from the host.
+
+Note: The host label(s) must exist when the container starts. If you modify
+those labels you can simply restart the container to have updated information.
+
+
 ## Building a docker repo from this repository
 
 ### Using the plain docker file
@@ -120,7 +141,7 @@ First clone this repository, then:
 docker build -t logentries .
 docker run -v /var/run/docker.sock:/var/run/docker.sock logentries -t <TOKEN> -j -a host=`uname -n`
 ```
-### Using Make - the official nodejs onbuild image 
+### Using Make - the official nodejs onbuild image
 ```bash
 export BUILD_TYPE=node-onbuild
 make build

@@ -20,6 +20,7 @@
     "dockerode": "^2.2.2",
     "end-of-stream": "^1.1.0",
     "minimist": "^1.1.1",
+    "request": "^2.72.0",
     "through2": "^0.6.5"
   }
 }

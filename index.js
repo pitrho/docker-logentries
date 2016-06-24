@@ -12,6 +12,8 @@ var statsFactory = require('docker-stats');
 var logFactory = require('docker-loghose');
 var eventsFactory = require('docker-event-log');
 var os = require('os');
+var request = require('request');
+
 
 function connect(opts) {
   var stream;
@@ -31,9 +33,8 @@ function connect(opts) {
 
 
 function start(opts) {
-  var logsToken = opts.logstoken || opts.token;
-  var statsToken = opts.statstoken || opts.token;
-  var eventsToken = opts.eventstoken || opts.token;
+  console.log("Started successfully, streaming logs ...");
+
   var out;
   var noRestart = function() {};
 
@@ -42,13 +43,13 @@ function start(opts) {
     var token = '';
 
     if (obj.line) {
-      token = logsToken;
+      token = opts.logstoken;
     }
     else if (obj.type) {
-      token = eventsToken;
+      token = opts.eventstoken;
     }
     else if (obj.stats) {
-      token = statsToken;
+      token = opts.statstoken;
     }
 
     if (token) {
@@ -69,26 +70,26 @@ function start(opts) {
 
   opts.events = events;
 
-  if (opts.logs !== false && logsToken) {
+  if (opts.logs !== false && opts.logstoken) {
     loghose = logFactory(opts);
     loghose.pipe(filter);
     streamsOpened++;
   }
 
-  if (opts.stats !== false && statsToken) {
+  if (opts.stats !== false && opts.statstoken) {
     stats = statsFactory(opts);
     stats.pipe(filter);
     streamsOpened++;
   }
 
-  if (opts.dockerEvents !== false && eventsToken) {
+  if (opts.dockerEvents !== false && opts.eventstoken) {
     dockerEvents = eventsFactory(opts);
     dockerEvents.pipe(filter);
     streamsOpened++;
   }
 
   if (!stats && !loghose && !dockerEvents) {
-    throw new Error('you should enable at least one of stats, logs or dockerEvents');
+    throw new Error('You must provide a key for at least one of logs, stats, or dockerEvents');
   }
 
   pipe();
@@ -141,9 +142,95 @@ function start(opts) {
   }
 }
 
-var unbound;
+
+/**
+ * Generate correct tokens to use for logs, stats, and docker events.
+ * Allows user to specify one or moe of those tokens when invoking this script.
+ * In absence of those tokens, service will attempt to retrieve the tokens
+ * from Rancher's metadata service in the form of host labels. Host labels are:
+ *     logentries-token         Base token
+ *     logentries-token-logs    Token specifically for log output
+ *     logentries-token-stats   Token specifically for Docker Stats output
+ *     logentries-token-events  Token specifically for Docker Events output
+ */
+function generateTokens(opts) {
+
+  // If user passes any tokens explicitly, then use those.
+  if ( opts.token || opts.logstoken || opts.statstoken || opts.eventstoken ) {
+    console.log("Using provided tokens ... ");
+    opts.logstoken = opts.logstoken || opts.token || '';
+    opts.statstoken = opts.statstoken || opts.token || '';
+    opts.eventstoken = opts.eventstoken || opts.token || '';
+
+    start(opts);
+
+  } else {
+    // Attempt to query Rancher's metadata service. Provide setTokenValues as
+    // callback.
+    console.log("Retrieving tokens from host labels ...");
+    requestMetadata(setTokenValues);
+  }
+
+  /**
+   * Make a request to Rancher's metadata service for this container's host's
+   * labels. This requires a callback to be provided to execute upon receiving
+   * the response, if any.
+   */
+  function requestMetadata(request_cb) {
+      var labels_api = 'http://rancher-metadata/2015-12-19/self/host/labels';
+
+      var request_options = {
+        url: labels_api,
+        headers: {
+          'Accept': 'application/json'
+        }
+      };
+
+      request(request_options, function (error, response, body) {
+        if (!error && response.statusCode == 200) {
+            try {
+              request_cb(JSON.parse(body));
+            } catch (e) {
+              throw new Error('Unable to parse response from metadata service ...');
+            }
+        } else {
+          throw new Error('Unable to connect to Rancher ...');
+        }
+      });
+  }
+
+  /**
+   * Upon successfully retrieving host labels from Rancher's metadata service,
+   * attempt to set the logstoken, statstoken, and eventstoken based on
+   * labels that may exist on that host.
+   * Start logger after this has been completed.
+   */
+  function setTokenValues(labels_data) {
+    var token_base, token_logs, token_stats, token_events;
+
+    for ( var k in labels_data ) {
+      if ( k === 'logentries-token' ) {
+        token_base = labels_data[k];
+      } else if ( k === 'logentries-token-logs' ) {
+        token_logs = labels_data[k];
+      } else if ( k === 'logentries-token-stats' ) {
+        token_stats = labels_data[k];
+      } else if ( k === 'logentries-token-events' ) {
+        token_events = labels_data[k];
+      }
+    }
+
+    opts.logstoken = token_logs || token_base || '';
+    opts.statstoken = token_stats || token_base || '';
+    opts.eventstoken = token_events || token_base || '';
+
+    start(opts);
+  }
+}
+
 
 function cli() {
+  var unbound;
   var argv = minimist(process.argv.slice(2), {
     boolean: ['json', 'secure', 'stats', 'logs', 'dockerEvents'],
     string: ['token', 'logstoken', 'statstoken', 'eventstoken', 'server', 'port'],
@@ -175,7 +262,7 @@ function cli() {
     }
   });
 
-  if (argv.help || !(argv.token || argv.logstoken || argv.statstoken || argv.eventstoken)) {
+  if (argv.help) {
     console.log('Usage: docker-logentries [-l LOGSTOKEN] [-k STATSTOKEN] [-e EVENTSTOKEN]\n' +
                 '                         [-t TOKEN] [--secure] [--json]\n' +
                 '                         [--no-newline] [--no-stats] [--no-logs] [--no-dockerEvents]\n' +
@@ -213,11 +300,15 @@ function cli() {
     return acc
   }, {});
 
-  start(argv);
+  // Create tokens used for logging logs, stats, and events, then start logger
+  generateTokens(argv);
+
 }
+
 
 module.exports = start;
 
 if (require.main === module) {
+  console.log("Starting logentries exporter ...")
   cli();
 }
