@@ -52,7 +52,38 @@ function start(opts) {
       token = opts.statstoken;
     }
 
-    if (token) {
+    var passes_regex = true;
+    var regex = '';
+
+    if (opts.matchByName != '') {
+      regex = new RegExp(opts.matchByName)
+      if (String(obj.name).match(regex) == null) {
+        passes_regex = false;
+      }
+    }
+
+    if (opts.matchByImage != '') {
+      regex = new RegExp(opts.matchByImage)
+      if (String(obj.image).match(regex) == null) {
+        passes_regex = false;
+      }
+    }
+
+    if (opts.skipByName != '') {
+      regex = new RegExp(opts.skipByName)
+      if (String(obj.name).match(regex) != null) {
+        passes_regex = false;
+      }
+    }
+
+    if (opts.skipByImage != '') {
+      regex = new RegExp(opts.skipByImage)
+      if (String(obj.image).match(regex) != null) {
+        passes_regex = false;
+      }
+    }
+
+    if (token && passes_regex == true) {
       this.push(token);
       this.push(' ');
       this.push(JSON.stringify(obj));
@@ -258,7 +289,11 @@ function cli() {
       statstoken: process.env.LOGENTRIES_STATSTOKEN || process.env.LOGENTRIES_TOKEN,
       eventstoken: process.env.LOGENTRIES_EVENTSTOKEN || process.env.LOGENTRIES_TOKEN,
       server: 'data.logentries.com',
-      port: unbound
+      port: unbound,
+      matchByImage: '',
+      matchByName: '',
+      skipByImage: '',
+      skipByName: ''
     }
   });
 
@@ -270,7 +305,8 @@ function cli() {
                 '                         [--matchByImage REGEXP] [--matchByName REGEXP]\n' +
                 '                         [--skipByImage REGEXP] [--skipByName REGEXP]\n' +
                 '                         [--server HOSTNAME] [--port PORT]\n' +
-                '                         [--help]');
+                '                         [--help]\n' +
+                '                         NOTE: All REGEXP must exclude the first and last \'/\' forward slashes.');
 
     process.exit(1);
   }
