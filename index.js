@@ -345,6 +345,6 @@ function cli() {
 module.exports = start;
 
 if (require.main === module) {
-  console.log("Starting logentries exporter ...")
+  console.log("Starting logentries exporter v0.3.0 ...")
   cli();
 }
